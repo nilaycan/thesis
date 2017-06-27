@@ -6,3 +6,5 @@ Please be patient while it is opening, it may take some time.
 You can click, choose a sub network and analyse them visually. 
 https://nilaycan.github.io/mousepheno/edges/ (gene edge version)
 https://nilaycan.github.io/mousepheno/ (gene node version)
+
+Under R codes, some algorithms and works attached. They are related to my lecture projects. 
