@@ -1,2 +1,2 @@
-# thesis
-This python scripts is related to master thesis work. 
+# Thesis(jax phenotyping algorithm)
+This python script and excel filesare related to master thesis work. 
