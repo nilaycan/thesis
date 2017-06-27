@@ -1,0 +1,344 @@
+﻿
+
+
+
+library(MASS) 
+library(class)
+library(cluster)
+library(impute)
+library(WGCNA)
+
+
+options(stringsAsFactors=F)
+dat0=read.csv(file.choose())
+ncol(dat0)
+
+
+
+dat1= dat0[1:8000,]
+
+
+datExpr = t(dat1[,2:(ncol(dat1)-1)])
+no.samples = dim(datExpr)[[1]]
+dim(datExpr)
+rm(dat0);
+gc() 
+
+ncol(datExpr)
+colnames(datExpr)
+dim(datExpr)
+powers1=c(seq(1,10,by=1),seq(12,20,by=2))
+RpowerTable=pickSoftThreshold(datExpr, powerVector=powers1)[[2]] 
+
+gc()
+cex1=0.7
+par(mfrow=c(1,2))
+plot(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],xlab="
+     Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n")
+text(RpowerTable[,1], -sign(RpowerTable[,3])*RpowerTable[,2],
+     labels=powers1,cex=cex1,col="red")
+abline(h=0.93,col="red")
+plot(RpowerTable[,1], RpowerTable[,5],xlab="Soft Threshold (power)",ylab="Mean
+     Connectivity", type="n")
+text(RpowerTable[,1], RpowerTable[,5], labels=powers1, cex=cex1,col="red") 
+
+
+beta1=7 # mean connectivity ve r^2 e gore secildi bu deger
+Connectivity=softConnectivity(datExpr,power=beta1)-1 
+par(mfrow=c(1,1))
+scaleFreePlot(Connectivity, main=paste("soft threshold, power=",beta1), truncated=F); 
+
+ConnectivityCut = 8000  #zaten basta sectigimiz deger
+ConnectivityRank = rank(-Connectivity)
+restConnectivity = ConnectivityRank <= ConnectivityCut
+sum(restConnectivity)
+ADJ= adjacency(datExpr[,restConnectivity],power=beta1)
+gc()
+dissTOM=TOMdist(ADJ)
+gc() 
+
+hierTOM = hclust(as.dist(dissTOM),method="average");
+par(mfrow=c(1,1))
+plot(hierTOM,labels=F) 
+
+colorh1= cutreeStaticColor(hierTOM,cutHeight = 0.94, minSize = 125)
+par(mfrow=c(2,1),mar=c(2,4,1,1))
+plot(hierTOM, main="Cluster Dendrogram", labels=F, xlab="", sub="");
+plotColorUnderTree(hierTOM,colors=data.frame(module=colorh1))
+title("Module (branch) color") 
+#rastgele 8000 gen secildigi icin hicbir significant module bulamadi. 
+#o yuzden variance siralamasi yapıp analizlere bastan basla.
+
+
+cmd1=cmdscale(as.dist(dissTOM),2)
+par(mfrow=c(1,1))
+plot(cmd1, col=as.character(colorh1), main="MDS plot",xlab="Scaling Dimension 1",ylab="Scaling Dimension 2") 
+
+
+GeneSignificanceALL=-log10(datSummary$pCox)
+GeneSignificance=GeneSignificanceALL[restConnectivity]
+par(mfrow=c(1,1))
+verboseBarplot(GeneSignificance,colorh1,main="Module Significance ",col=levels(factor(colorh1)) ,xlab="Module" ) 
+
+
+datME=moduleEigengenes(datExpr[,restConnectivity],colorh1)[[1]] 
+dissimME=1-(t(cor(datME, method="p")))/2
+hclustdatME=hclust(as.dist(dissimME), method="average" )
+par(mfrow=c(1,1))
+plot(hclustdatME, main="Clustering tree based on the module eigengenes of modules")
+
+plotMEpairs(datME[,1:5])
+signif(cor(datME, use="p"), 2) 
+datMEordered=datME[,hclustdatME$order]
+pairs( datMEordered, upper.panel = panel.smooth, lower.panel = panel.corr,
+       diag.panel=panel.hist ,main="Relation between module eigengenes") 
+#ERROR in pairs.default(datMEordered, upper.panel = panel.smooth, lower.panel = panel.cor,  : 
+object 'panel.cor' not found
+
+
+mean1=function(x) mean(x,na.rm=T)
+var1=function(x) var(x,na.rm=T)
+meanExpr=apply( datExpr[,restConnectivity],2,mean1)
+varExpr=apply( datExpr[,restConnectivity],2,var1)
+par(mfrow=c(1,2))
+plot(Connectivity[restConnectivity],meanExpr, col=as.character(colorh1),
+     main="Mean(Expression) vs K",xlab="Connectivity")
+plot (Connectivity[restConnectivity],varExpr, col= as.character(colorh1), main="Var(Expression)
+      vs K" ,xlab="Connectivity") 
+
+dynamicMods = cutreeDynamic(dendro = hierTOM, distM = dissTOM,
+                            deepSplit = 2, pamRespectsDendro = FALSE,minClusterSize=20); 
+dynamicColors = labels2colors(dynamicMods)
+par(mfrow=c(2,1), mar=c(1, 2, 4, 1))
+ClusterSamples=hclust(dist(datExpr),method="average")
+which.module="turquoise"
+plotMat(t(scale(datExpr[ClusterSamples$order,1:ncol(datExpr)][,dynamicColors==which.module ]) ),
+        nrgcols=30,rlabels=T,clabels=T,rcols=which.module,
+        main=which.module, cex.main=2)
+which.module="blue"
+plotMat(t(scale(datExpr[ClusterSamples$order,1:ncol(datExpr)][,dynamicColors==which.module ]) ),
+        nrgcols=30,rlabels=T,clabels=T,rcols=which.module,
+        main=which.module, cex.main=2)
+
+plotMEpairs(datME[,1:5])
+
+color1=rep("grey",dim(datExpr)[[2]])
+color1[restConnectivity]=as.character(colorh1)
+ConnectivityMeasures=intramodularConnectivity(ADJ,colors=colorh1)
+names(ConnectivityMeasures) 
+
+
+colorlevels=levels(factor(colorh1))
+par(mfrow=c(2,3),mar=c(5, 4, 4, 2) + 0.1)
+for (i in c(1:length(colorlevels) ) ) {
+  whichmodule=colorlevels[[i]];restrict1=colorh1==whichmodule
+  verboseScatterplot(ConnectivityMeasures$kWithin[restrict1],
+                     GeneSignificance[restrict1],col=colorh1[restrict1],main= paste("set I,",
+                                                                                    whichmodule),ylab="Gene Significance",xlab="Intramodular k")
+} 
+
+
+datKME=signedKME(datExpr, datME)
+names(datKME) 
+dim(datKME) 
+attach(datKME) 
+
+
+whichmodule="brown"
+restrictGenes= colorh1== whichmodule
+par(mfrow=c(1,1))
+verboseScatterplot(ConnectivityMeasures$kWithin[ restrictGenes],
+                   (datKME$kMEbrown[restConnectivity][restrictGenes])^beta1 ,xlab="kIN",ylab="kME^power",
+                   col=whichmodule,main="Relation between two measures of intramodular k, ") 
+
+
+attach(datKME)
+FilterGenes= GeneSignificanceALL > -log10(0.05) & abs(kMEbrown)>.85
+table(FilterGenes)
+datSummary[FilterGenes,] 
+#error in datSummary[, FilterGenes] : incorrect number of dimensions
+
+FilterGenes= GeneSignificanceALL> -log10(0.05) & -kMEbrown> .5 # notice the red minus sign!
+table(FilterGenes)
+datSummary[FilterGenes,] 
+#Error in datSummary[FilterGenes, ] : incorrect number of dimensions
+
+
+
+
+FilterGenes= GeneSignificanceALL > -log10(0.05) & abs(kMEbrown)>.5 & abs(kMEgreen)>.5
+table(FilterGenes)
+datSummary[FilterGenes,] 
+
+
+
+FilterGenes= GeneSignificanceALL > -log10(0.05) & abs(kMEbrown)>.6 & abs(kMEyellow)<.3
+table(FilterGenes) 
+
+datout=data.frame(datSummary, colorNEW=color1, ConnectivityNew=Connectivity,datKME )
+write.table(datout, file="OutputCancerNetwork.csv", sep=",", row.names=F) 
+
+
+corhelp=cor(datExpr[,restConnectivity],use="pairwise.complete.obs")
+whichmodule="brown"
+datconnectivitiesSoft=data.frame(matrix(666,nrow=sum(colorh1==whichmodule),ncol=length(powers1)))
+names(datconnectivitiesSoft)=paste("kWithinPower",powers1,sep="")
+for (i in c(1:length(powers1)) ) {
+  datconnectivitiesSoft[,i]=apply(abs(corhelp[colorh1==whichmodule,
+                                              colorh1==whichmodule])^powers1[i],1,sum)}
+SpearmanCorrelationsSoft=signif(cor(GeneSignificance[ colorh1==whichmodule],
+                                    datconnectivitiesSoft, method="s",use="p")) 
+
+
+
+datKTOM.IN=data.frame(matrix(666,nrow=sum(colorh1==whichmodule),ncol=length(powers1)))
+names(datKTOM.IN)=paste("omegaWithinPower",powers1,sep="")
+for (i in c(1:length(powers1)) ) {
+  datconnectivitiesSoft[,i]=apply(
+    1-TOMdist(abs(corhelp[colorh1==whichmodule, colorh1==whichmodule])^powers1[i])
+    ,1,sum)}
+SpearmanCorrelationskTOMSoft=as.vector(signif(cor(GeneSignificance[ colorh1==whichmodule],
+                                                  datconnectivitiesSoft, method="s",use="p")))
+par(mfrow=c(1,1), mar=c(5, 4, 4, 2) +0.1)
+plot(powers1, SpearmanCorrelationsSoft, main="Cor(Connectivity,Gene Significance) vs Soft
+     Thresholds(powers)",ylab="Spearman Correlation(Gene Significance,k.in)",xlab="Power
+     beta",type="n",ylim=range(c(SpearmanCorrelationsSoft,
+                                 SpearmanCorrelationskTOMSoft),na.rm=T))
+text(powers1, SpearmanCorrelationsSoft,labels=powers1,col="red")
+abline(v=6,col="red") 
+points(powers1, SpearmanCorrelationskTOMSoft, type="n")
+text(powers1, SpearmanCorrelationskTOMSoft,labels=powers1,col="orange") 
+
+
+
+datCCinSoft=data.frame(matrix(666,nrow=sum(colorh1==whichmodule),ncol=length(powers1)))
+names(datCCinSoft)=paste("CCinSoft",powers1,sep="")
+for (i in c(1:length(powers1)) ) {
+  datCCinSoft[,i]= clusterCoef(abs(corhelp[colorh1==whichmodule,
+                                           colorh1==whichmodule])^powers1[i])}
+SpearmanCorrelationsCCinSoft=as.vector(signif(cor(GeneSignificance[ colorh1==whichmodule],
+                                                  datCCinSoft, method="s",use="p")))
+dathelpSoft=data.frame(signedRsquared=-sign(RpowerTable[,3])*RpowerTable[,2], corGSkINSoft
+                       =as.vector(SpearmanCorrelationsSoft), corGSwINSoft=
+as.vector(SpearmanCorrelationskTOMSoft),corGSCCSoft=as.vector(SpearmanCorrelationsCCinSoft))
+matplot(powers1,dathelpSoft,type="l",lty=1,lwd=3,col=c("black","red","blue","green"),ylab="",xlab="beta")
+abline(v=6,col="red")
+legend(13,0.5, c("signed R^2","r(GS,k.IN)","r(GS,kTOM.IN)","r(GS,cc.in)"),
+       col=c("black","red","blue","green"), lty=1,lwd=3,ncol = 1, cex=1
+
+       
+
+       
+CC= clusterCoef(ADJ)
+gc() 
+
+
+par(mfrow=c(1,1),mar=c(2,2,2,1))
+plot(Connectivity[restConnectivity],CC,col=as.character(colorh1),xlab="Connectivity",ylab="Cluster Coefficient") 
+
+
+
+restHub= Connectivity[restConnectivity]>0
+by(data.frame(CC=CC[restHub], 
+k=Connectivity[restConnectivity][restHub]),INDICES=colorh1[restHub],FUN=cor) 
+
+thresholds1= c(seq(.1,.5, by=.1), seq(.55,.95, by=.05) ) 
+
+
+RdichotTable=pickHardThreshold(datExpr, thresholds1)[[2]]
+gc() 
+
+
+
+cex1=0.7
+gc()
+par(mfrow=c(1,2))
+plot(RdichotTable[,1], -sign(RdichotTable[,4])*RdichotTable[,3],xlab="Hard Threshold
+     tau",ylab="Scale Free Topology Model Fit,signed R^2", type="n")
+text(RdichotTable[,1], -sign(RdichotTable[,4])*RdichotTable[,3] , labels=thresholds1,cex=cex1)
+# this line corresponds to using an R^2 cut-off of h
+abline(h=0.95,col="red")
+plot(RdichotTable[,1], RdichotTable[,6],xlab="Hard Threshold tau",ylab="Mean Connectivity",
+     type="n")
+text(RdichotTable[,1], RdichotTable[,6] , labels=thresholds1, cex=cex1) 
+
+
+corhelp=cor(datExpr[,restConnectivity],use="pairwise.complete.obs")
+whichmodule="brown"
+
+datconnectivitiesHard=data.frame(matrix(666,
+nrow=sum(colorh1==whichmodule),ncol=length(thresholds1)))
+names(datconnectivitiesHard)=paste("kWithinTau",thresholds1,sep="")
+for (i in c(1:length(thresholds1)) ) {
+  datconnectivitiesHard[,i]=apply(abs(corhelp[colorh1==whichmodule,
+                                              colorh1==whichmodule])>=thresholds1[i],1,sum)}
+SpearmanCorrelationsHard=signif(cor(GeneSignificance[ colorh1==whichmodule],
+                                    datconnectivitiesHard, method="s",use="p"))
+
+
+
+datkTOMINHard=data.frame(matrix(666,nrow=sum(colorh1==whichmodule),ncol=length(threshol
+                                                                               ds1)))
+names(datkTOMINHard)=paste("omegaWithinHard",thresholds1,sep="")
+for (i in c(1:length(thresholds1)) ) {
+  datconnectivitiesHard[,i]=apply(
+    1-TOMdist(abs(corhelp[colorh1==whichmodule,
+                          colorh1==whichmodule])>thresholds1[i]),1,sum)}
+SpearmanCorrelationskTOMHard=as.vector(signif(cor(GeneSignificance[
+  colorh1==whichmodule], datconnectivitiesHard, method="s",use="p"))) 
+
+
+
+par(mfrow=c(1,1), mar=c(5, 4, 4, 2) +0.1)
+plot(thresholds1, SpearmanCorrelationsHard, main="
+     Cor(Connectivity,Gene Significance) vs Hard Thresholds",ylab="Spearman Correlation(Gene
+     Significance,Connectivity)",xlab="Threshold tau", type="n",
+     ylim=range(c(SpearmanCorrelationsHard, SpearmanCorrelationskTOMHard),na.rm=T))
+text(thresholds1, SpearmanCorrelationsHard,labels=thresholds1,col="black")
+abline(v=0.7,col="red")
+points(thresholds1, SpearmanCorrelationskTOMHard, type="n")
+text(thresholds1, SpearmanCorrelationskTOMHard,labels=thresholds1,col="blue") 
+
+
+#patlamaya başladı
+
+datCCinHard=data.frame(matrix(666,nrow=sum(colorh1==whichmodule),ncol=length(thresholds1)))
+names(datCCinHard)=paste("CCinHard",thresholds1,sep="")
+for (i in c(1:length(thresholds1)) ) {
+  datCCinHard[,i]= clusterCoef(abs(corhelp[colorh1==whichmodule,
+                                           colorh1==whichmodule])>thresholds1[i])}
+SpearmanCorrelationsCCinHard=as.vector(signif(cor(GeneSignificance[ colorh1==whichmodule],
+                                                  datCCinHard, method="s",use="p"))) 
+
+
+dathelpHard=data.frame(signedRsquared=-sign(RdichotTable[,4])*RdichotTable[,3],
+corGSkINHard =as.vector(SpearmanCorrelationsHard), corGSwINHard=
+as.vector(SpearmanCorrelationskTOMHard),corGSCCHard=as.vector(SpearmanCorrelationsCCinHard))
+matplot(thresholds1,dathelpHard,type="l",
+lty=1,lwd=3,col=c("black","red","blue","green"),ylab="",xlab="tau",xlim=c(.2,1))
+legend(0.75,0, c("signed R^2","r(GS,k.in)","r(GS,kTOM.IN)","r(GS,cc.in)"),
+       col=c("black","red","blue","green"), lty=1,lwd=3,ncol = 1, cex=1)
+abline(v=.7,col="red")
+
+
+AdjMatHARD=abs(cor(datExpr[,restConnectivity]))>0.70+0.0
+diag(AdjMatHARD)=0
+cluster.coefrestHARD= clusterCoef(AdjMatHARD)
+ConnectivityHARD= apply(AdjMatHARD,2,sum)
+par(mfrow=c(1,1))
+plot(ConnectivityHARD,cluster.coefrestHARD,col=as.character(colorh1),xlab="Connectivity",ylab="Cluster Coefficient" ) 
+
+
+
+restHub=ConnectivityHARD>100
+by(data.frame(CC= cluster.coefrestHARD[restHub], k=ConnectivityHARD[restHub]),
+   INDICES=colorh1[restHub],FUN=cor) 
+
+
+colorh1=as.character(datSummary$color1[restConnectivity])
+ADJ= abs(cor(datExpr[,restConnectivity],use="p"))>0.7
+gc()
+
+k=as.vector(apply(ADJ,2,sum)
+plot(k, Connectivity[restConnectivity],xlab="Unweighted Connectivity",ylab="Weighted Connectivity",main=paste( "correlation =",signif(cor(k,Connectivity[restConnectivity]),2)),col=colorh1)            
+            
